@@ -1,0 +1,60 @@
+[project]
+name = "pytorch-quality-bench"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.6",
+    "ruff>=0.15.16",
+    "torch>=2.12.0",
+]
+
+# PyTorch source selection per machine:
+#   - macOS (Apple Silicon / MPS)  -> CPU/MPS wheels from the pytorch-cpu index
+#   - Linux (GPU box, bare uv)      -> CUDA 12.6 wheels from the pytorch-cu126 index
+# Note: the GPU Docker image (Dockerfile.exp, NGC nvcr.io/nvidia/pytorch:24.07-py3)
+# ships its own optimized torch build -- do NOT run `uv sync` inside that container.
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'darwin'" },
+    { index = "pytorch-cu126", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.ruff]
+# Google Python Style Guide: 80-column lines, 2-space indentation.
+line-length = 80
+indent-width = 2
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "D",    # pydocstyle (docstrings)
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "PL",   # pylint
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

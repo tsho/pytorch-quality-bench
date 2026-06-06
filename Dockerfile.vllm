@@ -1,0 +1,13 @@
+# Separate image for exp5: vllm pins its own torch + CUDA build, so isolating it here
+# keeps it from clobbering the NGC-optimized torch used by exp1-4 (Dockerfile.exp).
+FROM nvcr.io/nvidia/pytorch:24.07-py3
+
+WORKDIR /app
+
+# vllm controls the torch version in THIS image on purpose; let it resolve its own stack.
+# transformers is pulled in by vllm but listed explicitly since exp5 imports it directly.
+RUN pip install --no-cache-dir vllm==0.5.4 transformers==4.44.2
+
+COPY exp5.py .
+
+CMD ["python", "exp5.py"]

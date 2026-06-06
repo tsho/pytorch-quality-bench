@@ -1,0 +1,16 @@
+FROM nvcr.io/nvidia/pytorch:24.07-py3
+
+WORKDIR /app
+
+# torch is already provided (and optimized) by the NGC base image -- do NOT reinstall it.
+#   - transformers / scikit-learn: pure-python deps, safe (torch requirement is a loose
+#     lower bound already satisfied by the bundled torch).
+#   - torchao: tightly coupled to the torch version, so install with --no-deps and pin a
+#     version compatible with the NGC 24.07 torch (2.4.x) to avoid pulling a different torch.
+RUN pip install --no-cache-dir transformers==4.44.2 scikit-learn==1.5.1 \
+ && pip install --no-cache-dir --no-deps torchao==0.5.0
+
+COPY *.py .
+
+# exp5 (vllm) lives in a separate image -- see Dockerfile.vllm.
+CMD ["python", "exp1.py"]
