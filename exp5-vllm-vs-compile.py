@@ -45,14 +45,14 @@ PROMPTS = [
 # --- torch.compile native path ---------------------------------------------
 
 
-def benchmark_torch_native(max_new_tokens=128, batch=8):
+def benchmark_torch_native(model_id, max_new_tokens=128, batch=8):
   """Benchmark generation throughput using torch.compile native serving."""
-  logger.info("Loading %s (torch.compile native)...", MODEL_ID)
-  tok = AutoTokenizer.from_pretrained(MODEL_ID)
+  logger.info("Loading %s (torch.compile native)...", model_id)
+  tok = AutoTokenizer.from_pretrained(model_id)
   if tok.pad_token_id is None:
     tok.pad_token = tok.eos_token
   model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
+    model_id,
     torch_dtype=DTYPE,
     device_map=DEVICE,
   )
@@ -93,13 +93,13 @@ def benchmark_torch_native(max_new_tokens=128, batch=8):
 # --- vLLM path --------------------------------------------------------------
 
 
-def benchmark_vllm(max_new_tokens=128, batch=8):
+def benchmark_vllm(model_id, max_new_tokens=128, batch=8):
   """Benchmark generation throughput using the vLLM serving runtime."""
   # Lazy import: avoid importing vllm unless this code path runs.
   from vllm import LLM, SamplingParams  # noqa: PLC0415
 
-  logger.info("Loading %s (vLLM)...", MODEL_ID)
-  llm = LLM(model=MODEL_ID, dtype="bfloat16", gpu_memory_utilization=0.85)
+  logger.info("Loading %s (vLLM)...", model_id)
+  llm = LLM(model=model_id, dtype="bfloat16", gpu_memory_utilization=0.85)
   params = SamplingParams(max_tokens=max_new_tokens, temperature=0.0)
 
   # Warmup
@@ -123,14 +123,15 @@ def main():
   """Parse CLI args, run the selected runtime benchmark, and log results."""
   parser = argparse.ArgumentParser()
   parser.add_argument("--runtime", choices=["torch", "vllm"], required=True)
+  parser.add_argument("--model", default=MODEL_ID)
   parser.add_argument("--batch", type=int, default=8)
   parser.add_argument("--max_new_tokens", type=int, default=128)
   args = parser.parse_args()
 
   if args.runtime == "torch":
-    r = benchmark_torch_native(args.max_new_tokens, args.batch)
+    r = benchmark_torch_native(args.model, args.max_new_tokens, args.batch)
   else:
-    r = benchmark_vllm(args.max_new_tokens, args.batch)
+    r = benchmark_vllm(args.model, args.max_new_tokens, args.batch)
 
   logger.info("=== Result ===")
   logger.info("  Runtime:    %s", r["runtime"])

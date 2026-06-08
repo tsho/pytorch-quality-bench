@@ -8,6 +8,6 @@ WORKDIR /app
 # transformers is pulled in by vllm but listed explicitly since exp5 imports it directly.
 RUN pip install --no-cache-dir vllm==0.5.4 transformers==4.44.2
 
-COPY exp5.py .
+COPY exp5-vllm-vs-compile.py run_all.sh ./
 
-CMD ["python", "exp5.py"]
+CMD ["python", "exp5-vllm-vs-compile.py"]
