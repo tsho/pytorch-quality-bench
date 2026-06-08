@@ -36,94 +36,156 @@ LARGE_TENSOR_NUMEL = 10_000_000
 class CleanModel(nn.Module):
   """Pure tensor ops — torch.compile produces a single graph."""
 
-  def __init__(self, hidden=1024):
-    """Build three stacked linear layers of width ``hidden``."""
+  def __init__(self, hidden: int = 1024):
+    """Build three stacked linear layers of width ``hidden``.
+
+    Args:
+      hidden: Feature width of every linear layer (input and output).
+    """
     super().__init__()
     self.l1 = nn.Linear(hidden, hidden)
     self.l2 = nn.Linear(hidden, hidden)
     self.l3 = nn.Linear(hidden, hidden)
 
-  def forward(self, x):
-    """Apply the linear layers with ReLU activations and return the output."""
-    x = torch.relu(self.l1(x))
-    x = torch.relu(self.l2(x))
-    return self.l3(x)
+  def forward(self, data: torch.Tensor) -> torch.Tensor:
+    """Apply the linear layers with ReLU activations.
+
+    Args:
+      data: Input tensor of shape ``(batch, hidden)``.
+
+    Returns:
+      Output tensor of shape ``(batch, hidden)``.
+    """
+    data = torch.relu(self.l1(data))
+    data = torch.relu(self.l2(data))
+    return self.l3(data)
 
 
 class BreakProneModel(nn.Module):
   """Data-dependent control flow forces graph breaks on every forward."""
 
-  def __init__(self, hidden=1024):
-    """Build three stacked linear layers of width ``hidden``."""
+  def __init__(self, hidden: int = 1024):
+    """Build three stacked linear layers of width ``hidden``.
+
+    Args:
+      hidden: Feature width of every linear layer (input and output).
+    """
     super().__init__()
     self.l1 = nn.Linear(hidden, hidden)
     self.l2 = nn.Linear(hidden, hidden)
     self.l3 = nn.Linear(hidden, hidden)
 
-  def forward(self, x):
-    """Run the layers with data-dependent control flow that breaks graphs."""
-    x = torch.relu(self.l1(x))
+  def forward(self, data: torch.Tensor) -> torch.Tensor:
+    """Run the layers with data-dependent control flow that breaks graphs.
+
+    Each marked ``BAD`` block forces torch.compile to split the graph: a
+    data-dependent branch, Python-level iteration over tensor values, and a
+    logging side effect in the hot path.
+
+    Args:
+      data: Input tensor of shape ``(batch, hidden)``.
+
+    Returns:
+      Output tensor of shape ``(batch, hidden)``, scaled by a Python float
+      derived from the data (one of the break sources).
+    """
+    data = torch.relu(self.l1(data))
 
     # BAD #1: data-dependent branch
-    if x.sum().item() > 0:
-      x = self.l2(x)
+    if data.sum().item() > 0:
+      data = self.l2(data)
     else:
-      x = -self.l2(x)
+      data = -self.l2(data)
 
     # BAD #2: Python-level iteration over tensor values
     scale = 1.0
-    for v in x.mean(dim=0).tolist()[:3]:
+    for v in data.mean(dim=0).tolist()[:3]:
       scale *= 1.0 + v * 1e-4
 
     # BAD #3: log / side effect in hot path
-    if x.numel() > LARGE_TENSOR_NUMEL:
+    if data.numel() > LARGE_TENSOR_NUMEL:
       logger.warning("(unlikely branch)")
 
-    return self.l3(x) * scale
+    return self.l3(data) * scale
 
 
 # --- Benchmark helpers ------------------------------------------------------
 
 
-def benchmark(model, x, n_warmup=5, n_iter=20):
-  """Return mean forward latency in ms after warmup, over ``n_iter`` runs."""
+def benchmark(
+  model: nn.Module,
+  data: torch.Tensor,
+  n_warmup: int = 5,
+  n_iter: int = 20,
+) -> float:
+  """Measure the mean forward-pass latency of ``model``.
+
+  Runs ``n_warmup`` un-timed forwards first (lets torch.compile finish
+  compiling and caches warm up), then times ``n_iter`` forwards. On CUDA,
+  synchronizes around the timed region so kernel launches are not measured
+  asynchronously.
+
+  Args:
+    model: Model to benchmark (eager or torch.compile-wrapped).
+    data: Input tensor passed to every forward call.
+    n_warmup: Number of un-timed warmup iterations.
+    n_iter: Number of timed iterations to average over.
+
+  Returns:
+    Mean latency of one forward pass, in milliseconds.
+  """
   for _ in range(n_warmup):
-    _ = model(x)
+    _ = model(data)
   if DEVICE == "cuda":
     torch.cuda.synchronize()
   t0 = time.perf_counter()
   for _ in range(n_iter):
-    _ = model(x)
+    _ = model(data)
   if DEVICE == "cuda":
     torch.cuda.synchronize()
   return (time.perf_counter() - t0) / n_iter * 1000  # ms
 
 
-def explain_breaks(model, x):
-  """torch._dynamo.explain returns a structured report of graph breaks."""
-  report = dynamo.explain(model)(x)
+def explain_breaks(model: nn.Module, data: torch.Tensor):
+  """Trace ``model`` with torch._dynamo.explain and report graph breaks.
+
+  Args:
+    model: Un-compiled model to analyze.
+    data: Example input used for tracing.
+
+  Returns:
+    A ``torch._dynamo`` ExplainOutput with ``graph_break_count``,
+    ``graph_count``, and ``op_count`` attributes.
+  """
+  report = dynamo.explain(model)(data)
   return report
 
 
-def main():
-  """Benchmark both models, inspect graph breaks, and return the results."""
+def main() -> dict[str, float]:
+  """Benchmark both models eager vs compiled and inspect graph breaks.
+
+  Returns:
+    Latency results in ms (``eager_clean_ms``, ``compiled_clean_ms``,
+    ``eager_breaky_ms``, ``compiled_breaky_ms``) plus ``graph_breaks``,
+    the break count reported by torch._dynamo.explain.
+  """
   logger.info("Device: %s", DEVICE)
-  x = torch.randn(32, 1024, device=DEVICE)
+  data = torch.randn(32, 1024, device=DEVICE)
 
   clean = CleanModel().to(DEVICE)
   breaky = BreakProneModel().to(DEVICE)
 
   # --- Clean model -------------------------------------------------------
-  eager_clean = benchmark(clean, x)
-  compiled_clean = benchmark(torch.compile(clean), x)
+  eager_clean = benchmark(clean, data)
+  compiled_clean = benchmark(torch.compile(clean), data)
 
   # --- Break-prone model -------------------------------------------------
-  eager_breaky = benchmark(breaky, x)
-  compiled_breaky = benchmark(torch.compile(breaky), x)
+  eager_breaky = benchmark(breaky, data)
+  compiled_breaky = benchmark(torch.compile(breaky), data)
 
   # --- Graph break inspection -------------------------------------------
   logger.info("=== Graph break analysis (break-prone model) ===")
-  rep = explain_breaks(BreakProneModel().to(DEVICE), x)
+  rep = explain_breaks(BreakProneModel().to(DEVICE), data)
   logger.info("  Graph breaks reported: %s", rep.graph_break_count)
   logger.info("  Graphs produced:       %s", rep.graph_count)
   logger.info("  Op count (total):      %s", rep.op_count)
