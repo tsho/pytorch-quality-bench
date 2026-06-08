@@ -1,6 +1,6 @@
-"""Experiment 3: KV-cache OOM on A10G 24GB.
+"""Experiment 3: KV-cache OOM on a ~22GB GPU (e.g. A10G).
 
-Goal: Show that an 8B model fits at FP16 on A10G 24GB *until* you ask for
+Goal: Show that an 8B model fits at FP16 on a ~22GB GPU *until* you ask for
 realistic context lengths; the KV-cache eats the remaining VRAM.
 
 Expected outcome for Abstract:
