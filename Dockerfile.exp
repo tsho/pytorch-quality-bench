@@ -10,7 +10,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir transformers==4.44.2 scikit-learn==1.5.1 \
  && pip install --no-cache-dir --no-deps torchao==0.5.0
 
-COPY *.py .
+COPY *.py run_all.sh ./
 
 # exp5 (vllm) lives in a separate image -- see Dockerfile.vllm.
-CMD ["python", "exp1.py"]
+CMD ["python", "exp1-compile-graph-breaks.py"]

@@ -64,11 +64,11 @@ PROBE = [
 ]
 
 
-def load_model(quantize: bool):
+def load_model(model_id: str, quantize: bool):
   """Load the model and tokenizer, optionally quantizing weights to INT4."""
-  tok = AutoTokenizer.from_pretrained(MODEL_ID)
+  tok = AutoTokenizer.from_pretrained(model_id)
   model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
+    model_id,
     torch_dtype=DTYPE,
     device_map=DEVICE,
   )
@@ -140,15 +140,16 @@ def run_eval(model, tok, n_tasks: int):
 def main():
   """Run the FP16 vs INT4 evaluation and log the regression report."""
   parser = argparse.ArgumentParser()
+  parser.add_argument("--model", default=MODEL_ID)
   parser.add_argument("--n_tasks", type=int, default=20)
   args = parser.parse_args()
 
   results = {}
 
   # --- FP16 baseline -----------------------------------------------------
-  logger.info("=== Loading %s as FP16/BF16 ===", MODEL_ID)
+  logger.info("=== Loading %s as FP16/BF16 ===", args.model)
   torch.cuda.reset_peak_memory_stats() if DEVICE == "cuda" else None
-  model, tok, label = load_model(quantize=False)
+  model, tok, label = load_model(args.model, quantize=False)
   logger.info("VRAM after load: %.2f GB", torch.cuda.memory_allocated() / 1e9)
   logger.info("=== Eval: %s ===", label)
   results["fp16"] = run_eval(model, tok, args.n_tasks)
@@ -158,9 +159,9 @@ def main():
   torch.cuda.empty_cache() if DEVICE == "cuda" else None
 
   # --- INT4 (torchao) ----------------------------------------------------
-  logger.info("=== Loading %s and quantizing to INT4 ===", MODEL_ID)
+  logger.info("=== Loading %s and quantizing to INT4 ===", args.model)
   torch.cuda.reset_peak_memory_stats() if DEVICE == "cuda" else None
-  model, tok, label = load_model(quantize=True)
+  model, tok, label = load_model(args.model, quantize=True)
   logger.info(
     "VRAM after quantize: %.2f GB", torch.cuda.memory_allocated() / 1e9
   )
